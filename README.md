@@ -26,36 +26,6 @@ Open **http://localhost:5173** in your browser.
 
 ---
 
-## 🔐 Test Credentials
-
-| Role  | Email                   | Password   | Access |
-|-------|-------------------------|------------|--------|
-| Admin | admin@organnet.com      | admin123   | Full access including Audit Logs & Hospitals |
-| Doctor | dralice@hospitalA.com  | doctor123  | All except Audit Logs & Hospital management |
-| Doctor | drbob@hospitalB.com    | doctor123  | All except Audit Logs & Hospital management |
-
-> **Note:** These accounts are created by the seed script (see below).
-
----
-
-## 🌱 Seed Demo Data
-
-The app comes with a built-in seed utility. After running the app:
-
-1. Log in as **admin@organnet.com** (first create the account manually in Firebase Auth, OR use the Firebase Console to create it)
-2. Navigate to **http://localhost:5173/seed**
-3. Click **"Run Seed"** — this will populate:
-   - 3 Hospitals (Chennai, Delhi, Bengaluru)
-   - 3 Users (Admin + 2 Doctors)
-   - 5 Donors
-   - 8 Recipients
-   - 6 Organs
-   - 2 Allocations (1 normal, 1 override)
-   - 5 Audit Log entries
-
-> ⚠️ Run seed **only once** to avoid duplicate data.
-
----
 
 ## 🏗️ Architecture
 
@@ -125,31 +95,10 @@ Override allocations **cannot** be submitted without a mandatory reason — enfo
 
 ---
 
-## 🛠️ Firebase Deploy
-
-### 1. Install Firebase CLI
-```bash
-npm install -g firebase-tools
-firebase login
-```
-
-### 2. Initialize project
-```bash
-firebase init
-# Select: Firestore + Hosting
-# Hosting: public directory = dist
-# SPA: Yes
-```
-
 ### 3. Build & Deploy
 ```bash
 npm run build
 firebase deploy
-```
-
-### 4. Deploy Firestore rules & indexes only
-```bash
-firebase deploy --only firestore
 ```
 
 ---
@@ -167,16 +116,3 @@ firebase deploy --only firestore
 | Fonts        | Cormorant Garamond, DM Sans, DM Mono |
 
 ---
-
-## ✅ Manual Test Checklist
-
-- [ ] Login as Admin → full access confirmed
-- [ ] Login as Doctor → Audit Logs tab hidden
-- [ ] Add a donor → appears in table instantly (real-time)
-- [ ] Add an organ → notification created
-- [ ] Run matching on an organ → ranked list shown with scores
-- [ ] Allocate top match → success screen, organ status → Allocated
-- [ ] Allocate non-top match without reason → blocked with error
-- [ ] Allocate non-top match with reason → override recorded in audit log
-- [ ] Open two tabs → add organ in tab 1 → dashboard updates in tab 2 (no refresh)
-- [ ] Doctor tries `/audit-logs` → redirected to dashboard
