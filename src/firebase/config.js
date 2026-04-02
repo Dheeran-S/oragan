@@ -6,12 +6,12 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCCa_WHTanjYNMV2ix-aKFOZ3EVO3_MqX8",
-  authDomain: "organ-donation-network-ca8fd.firebaseapp.com",
-  projectId: "organ-donation-network-ca8fd",
-  storageBucket: "organ-donation-network-ca8fd.firebasestorage.app",
-  messagingSenderId: "325545162996",
-  appId: "1:325545162996:web:7cda990f518ffd65d4c6a1"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // Initialize Firebase App
