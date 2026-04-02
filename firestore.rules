@@ -1,0 +1,137 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ─────────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserData().role == 'admin';
+    }
+
+    function isDoctor() {
+      return isAuthenticated() && getUserData().role == 'doctor';
+    }
+
+    function isAdminOrDoctor() {
+      return isAdmin() || isDoctor();
+    }
+
+    // ── Validation helpers ───────────────────────────────────────────────
+    function validBloodGroup(bg) {
+      return bg in ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
+    }
+
+    function validOrganType(t) {
+      return t in ['Kidney','Liver','Heart','Lung','Pancreas','Intestine'];
+    }
+
+    function validUrgency(u) {
+      return u is number && u >= 1 && u <= 10;
+    }
+
+    function validWaitingDays(d) {
+      return d is number && d >= 0;
+    }
+
+    function validOrganStatus(s) {
+      return s in ['available','allocated','transplanted','expired'];
+    }
+
+    // ── users ────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Users can read their own profile; admins can read all
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      // Admins can write any user doc; users can write their own
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+    }
+
+    // ── hospitals ────────────────────────────────────────────────────────
+    match /hospitals/{hospitalId} {
+      allow read:  if isAuthenticated();
+      allow create,update,delete: if isAdmin();
+    }
+
+    // ── donors ───────────────────────────────────────────────────────────
+    match /donors/{donorId} {
+      allow read: if isAdminOrDoctor();
+      allow create: if isAdminOrDoctor()
+        && request.resource.data.keys().hasAll(['name','age','gender','blood_group','donor_type','hospital_id'])
+        && validBloodGroup(request.resource.data.blood_group)
+        && request.resource.data.age is number
+        && request.resource.data.age >= 0;
+      allow update: if isAdminOrDoctor();
+      allow delete: if isAdmin();
+    }
+
+    // ── recipients ───────────────────────────────────────────────────────
+    match /recipients/{recipientId} {
+      allow read: if isAdminOrDoctor();
+      allow create: if isAdminOrDoctor()
+        && request.resource.data.keys().hasAll(['name','age','gender','blood_group','organ_needed','medical_urgency','waiting_days','hospital_id'])
+        && validBloodGroup(request.resource.data.blood_group)
+        && validOrganType(request.resource.data.organ_needed)
+        && validUrgency(request.resource.data.medical_urgency)
+        && validWaitingDays(request.resource.data.waiting_days);
+      allow update: if isAdminOrDoctor();
+      allow delete: if isAdmin();
+    }
+
+    // ── organs ───────────────────────────────────────────────────────────
+    match /organs/{organId} {
+      allow read: if isAdminOrDoctor();
+      allow create: if isAdminOrDoctor()
+        && request.resource.data.keys().hasAll(['organ_type','blood_group','donor_id','availability_status'])
+        && validOrganType(request.resource.data.organ_type)
+        && validBloodGroup(request.resource.data.blood_group)
+        && validOrganStatus(request.resource.data.availability_status);
+      allow update: if isAdminOrDoctor();
+      allow delete: if isAdmin();
+    }
+
+    // ── allocations ──────────────────────────────────────────────────────
+    match /allocations/{allocationId} {
+      allow read: if isAdminOrDoctor();
+      allow create: if isAdminOrDoctor()
+        && request.resource.data.keys().hasAll(['organ_id','recipient_id','status','priority_score','is_override'])
+        // Override must have reason
+        && (!request.resource.data.is_override || 
+            (request.resource.data.override_reason is string && 
+             request.resource.data.override_reason.size() > 0));
+      allow update: if isAdminOrDoctor();
+      allow delete: if isAdmin();
+    }
+
+    // ── transplants ──────────────────────────────────────────────────────
+    match /transplants/{transplantId} {
+      allow read: if isAdminOrDoctor();
+      allow create,update: if isAdminOrDoctor();
+      allow delete: if isAdmin();
+    }
+
+    // ── audit_logs ── Admin read-only ─────────────────────────────────────
+    match /audit_logs/{logId} {
+      allow read:   if isAdmin();
+      // Any authenticated user can CREATE (system writes from client)
+      allow create: if isAuthenticated();
+      // No edits or deletes — immutable audit trail
+      allow update, delete: if false;
+    }
+
+    // ── notifications ────────────────────────────────────────────────────
+    match /notifications/{notifId} {
+      allow read:   if isAuthenticated();
+      allow create: if isAuthenticated();
+      // Allow marking as read
+      allow update: if isAuthenticated()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      allow delete: if isAdmin();
+    }
+  }
+}
