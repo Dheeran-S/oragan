@@ -133,5 +133,19 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
       allow delete: if isAdmin();
     }
+
+    // ── matches ──────────────────────────────────────────────────────────
+    match /matches/{matchId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdminOrDoctor();
+      allow delete: if isAdmin();
+    }
+
+    // ── overrides ────────────────────────────────────────────────────────
+    match /overrides/{overrideId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdminOrDoctor();
+      allow delete: if isAdmin();
+    }
   }
 }

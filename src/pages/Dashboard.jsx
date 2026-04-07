@@ -6,47 +6,40 @@ import {
   Heart, Users, ClipboardList, Activity,
   TrendingUp, Clock, AlertTriangle,
 } from 'lucide-react';
-import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-} from 'recharts';
 import { db } from '../firebase/config';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { formatDate } from '../utils/helpers';
-
-const CHART_COLORS = {
-  kidney:   '#5B9BD5',
-  liver:    '#3aad8c',
-  heart:    '#d95f5f',
-  lung:     '#e8a44a',
-  pancreas: '#5C7C89',
-  intestine:'#9b7fd4',
-};
+import { completeAllocation } from '../utils/createAllocation';
 
 export default function Dashboard() {
-  const { userProfile } = useAuth();
+  const { currentUser, userProfile } = useAuth();
+
+  const handleCompleteTransplant = async (alloc) => {
+    if (!window.confirm(`Complete transplant for allocation ${alloc.id.slice(0, 8)}?`)) return;
+    try {
+      await completeAllocation({
+        allocation_id: alloc.id,
+        organ_id: alloc.organ_id,
+        currentUser: { uid: currentUser?.uid, name: userProfile?.name, role: userProfile?.role }
+      });
+    } catch (err) {
+      alert("Failed to complete transplant: " + err.message);
+    }
+  };
 
   // Live counts from Firestore
   const [stats, setStats]             = useState({ organs: 0, recipients: 0, allocations: 0, transplants: 0 });
   const [recentAllocs, setRecentAllocs] = useState([]);
-  const [organsByType, setOrgansByType] = useState([]);
-  const [monthlyData, setMonthlyData]   = useState([]);
   const [urgentRecipients, setUrgentRecipients] = useState([]);
+  const [recentMatches, setRecentMatches] = useState([]);
+  const [recentOverrides, setRecentOverrides] = useState([]);
 
   // Organs listener
   useEffect(() => {
     const qAvail = query(collection(db, 'organs'), where('availability_status', '==', 'available'));
     return onSnapshot(qAvail, snap => {
       setStats(s => ({ ...s, organs: snap.size }));
-
-      // Organs by type (pie)
-      const typeCounts = {};
-      snap.docs.forEach(d => {
-        const t = d.data().organ_type || 'Unknown';
-        typeCounts[t] = (typeCounts[t] || 0) + 1;
-      });
-      setOrgansByType(Object.entries(typeCounts).map(([name, value]) => ({ name, value })));
     });
   }, []);
 
@@ -86,16 +79,32 @@ export default function Dashboard() {
     });
   }, []);
 
-  // Static monthly mock data (replaced with real data when audit_logs aggregation is available)
+  // Matches listener (from audit_logs)
   useEffect(() => {
-    setMonthlyData([
-      { month: 'Oct', donors: 3, allocations: 2, transplants: 1 },
-      { month: 'Nov', donors: 5, allocations: 4, transplants: 3 },
-      { month: 'Dec', donors: 4, allocations: 3, transplants: 2 },
-      { month: 'Jan', donors: 7, allocations: 5, transplants: 4 },
-      { month: 'Feb', donors: 6, allocations: 6, transplants: 5 },
-      { month: 'Mar', donors: 8, allocations: 7, transplants: 6 },
-    ]);
+    const qMatches = query(collection(db, 'audit_logs'), where('action_type', '==', 'allocation_created'));
+    return onSnapshot(qMatches, snap => {
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      all.sort((a, b) => {
+        const ta = a.timestamp?.toDate?.() || 0;
+        const tb = b.timestamp?.toDate?.() || 0;
+        return tb - ta;
+      });
+      setRecentMatches(all.slice(0, 5));
+    });
+  }, []);
+
+  // Overrides listener (from audit_logs)
+  useEffect(() => {
+    const qOverrides = query(collection(db, 'audit_logs'), where('action_type', '==', 'allocation_override'));
+    return onSnapshot(qOverrides, snap => {
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      all.sort((a, b) => {
+        const ta = a.timestamp?.toDate?.() || 0;
+        const tb = b.timestamp?.toDate?.() || 0;
+        return tb - ta;
+      });
+      setRecentOverrides(all.slice(0, 5));
+    });
   }, []);
 
   const successRate = stats.organs + stats.transplants > 0
@@ -108,16 +117,6 @@ export default function Dashboard() {
     { label: 'Approved Allocations', value: stats.allocations, icon: ClipboardList, accent: '#e8a44a', id: 'stat-allocations' },
     { label: 'Transplants Done',     value: stats.transplants, icon: Activity,      accent: '#3aad8c', id: 'stat-transplants' },
   ];
-
-  const CUSTOM_TOOLTIP_STYLE = {
-    background: '#0d2133',
-    border: '1px solid rgba(92,124,137,0.3)',
-    borderRadius: 8,
-    color: '#fff',
-    fontFamily: 'DM Sans, sans-serif',
-    fontSize: 12,
-  };
-
   return (
     <div>
       {/* Page Header */}
@@ -147,79 +146,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Charts Row */}
-      <div style={{display:'grid', gridTemplateColumns:'1fr 320px', gap:'20px', marginBottom:24}}>
-
-        {/* Area Chart — Monthly Activity */}
-        <div className="chart-wrapper">
-          <div className="chart-title">Monthly Activity Trend</div>
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={monthlyData} margin={{top:5,right:10,left:-20,bottom:0}}>
-              <defs>
-                <linearGradient id="gradDonors" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#5B9BD5" stopOpacity={0.4}/>
-                  <stop offset="95%" stopColor="#5B9BD5" stopOpacity={0}/>
-                </linearGradient>
-                <linearGradient id="gradAlloc" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#3aad8c" stopOpacity={0.4}/>
-                  <stop offset="95%" stopColor="#3aad8c" stopOpacity={0}/>
-                </linearGradient>
-                <linearGradient id="gradTransplant" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#e8a44a" stopOpacity={0.4}/>
-                  <stop offset="95%" stopColor="#e8a44a" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(92,124,137,0.1)" />
-              <XAxis dataKey="month" tick={{fill:'rgba(255,255,255,0.4)', fontSize:11}} axisLine={false} tickLine={false} />
-              <YAxis tick={{fill:'rgba(255,255,255,0.4)', fontSize:11}} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} />
-              <Legend wrapperStyle={{fontSize:11, color:'rgba(255,255,255,0.6)'}} />
-              <Area type="monotone" dataKey="donors"       stroke="#5B9BD5" fill="url(#gradDonors)"    strokeWidth={2} dot={false} />
-              <Area type="monotone" dataKey="allocations"  stroke="#3aad8c" fill="url(#gradAlloc)"     strokeWidth={2} dot={false} />
-              <Area type="monotone" dataKey="transplants"  stroke="#e8a44a" fill="url(#gradTransplant)" strokeWidth={2} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Pie Chart — Organs by Type */}
-        <div className="chart-wrapper">
-          <div className="chart-title">Organs by Type</div>
-          {organsByType.length > 0 ? (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie
-                  data={organsByType}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={85}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {organsByType.map((entry, i) => (
-                    <Cell
-                      key={`cell-${i}`}
-                      fill={Object.values(CHART_COLORS)[i % Object.values(CHART_COLORS).length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} />
-                <Legend
-                  wrapperStyle={{fontSize:11, color:'rgba(255,255,255,0.6)'}}
-                  iconType="circle"
-                  iconSize={8}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="empty-state" style={{padding:40}}>
-              <Heart size={36} style={{opacity:0.2, margin:'0 auto 8px', display:'block'}} />
-              <p>No available organs yet</p>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Bottom Row */}
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:20}}>
 
@@ -242,6 +168,7 @@ export default function Dashboard() {
                     <th>Status</th>
                     <th>Override</th>
                     <th>Date</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -255,6 +182,15 @@ export default function Dashboard() {
                           : <span className="text-muted text-xs">—</span>}
                       </td>
                       <td className="text-xs text-muted">{formatDate(a.created_at)}</td>
+                      <td>
+                        <button 
+                          className="btn btn-secondary" 
+                          style={{padding: '4px 8px', fontSize: '0.75rem', height: 'auto'}}
+                          onClick={() => handleCompleteTransplant(a)}
+                        >
+                          Complete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -295,6 +231,94 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td className="font-mono text-sm">{r.blood_group}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Matches and Overrides Row */}
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:20, marginTop:24}}>
+        
+        {/* Matches */}
+        <div className="glass-card">
+          <div className="section-title">
+            <Activity size={18} style={{color:'#3aad8c'}} />
+            Matches
+          </div>
+          {recentMatches.length === 0 ? (
+            <div className="empty-state" style={{padding:24}}>
+              <p>No matches yet</p>
+            </div>
+          ) : (
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Match ID</th>
+                    <th>Organ ID</th>
+                    <th>Recip. ID</th>
+                    <th>Score</th>
+                    <th>Selected</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentMatches.map(m => {
+                    const organIdStr = m.description?.match(/Organ ([\w]+)/)?.[1] || 'N/A';
+                    const recipIdStr = m.description?.match(/Recipient ([\w]+)/)?.[1] || 'N/A';
+                    return (
+                    <tr key={m.id}>
+                      <td className="font-mono text-xs text-slate">{m.allocation_id ? m.allocation_id.slice(0,8) : m.id.slice(0,8)}</td>
+                      <td className="font-mono text-xs" title={organIdStr}>{organIdStr !== 'N/A' ? organIdStr.slice(0,5) + '…' : 'N/A'}</td>
+                      <td className="font-mono text-xs" title={recipIdStr}>{recipIdStr !== 'N/A' ? recipIdStr.slice(0,5) + '…' : 'N/A'}</td>
+                      <td className="font-mono text-xs">—</td>
+                      <td>
+                        <span className="badge badge-approved">
+                          Yes
+                        </span>
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Overrides */}
+        <div className="glass-card">
+          <div className="section-title">
+            <AlertTriangle size={18} style={{color:'var(--warning)'}} />
+            Overrides
+          </div>
+          {recentOverrides.length === 0 ? (
+            <div className="empty-state" style={{padding:24}}>
+              <p>No overrides yet</p>
+            </div>
+          ) : (
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Override ID</th>
+                    <th>Match ID</th>
+                    <th>Reason</th>
+                    <th>User ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentOverrides.map(o => (
+                    <tr key={o.id}>
+                      <td className="font-mono text-xs text-slate">{o.id.slice(0,8)}</td>
+                      <td className="font-mono text-xs" title={o.allocation_id}>{o.allocation_id ? o.allocation_id.slice(0,5) + '…' : 'N/A'}</td>
+                      <td className="text-sm" title={o.override_reason || o.description}>
+                        {o.override_reason ? (o.override_reason.length > 30 ? o.override_reason.slice(0,30) + '…' : o.override_reason) : (o.description ? o.description.slice(0, 30) + '…' : '—')}
+                      </td>
+                      <td className="font-mono text-xs">{o.user_id ? o.user_id.slice(0,5) + '…' : 'N/A'}</td>
                     </tr>
                   ))}
                 </tbody>
